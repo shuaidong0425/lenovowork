@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>服务商库存查询</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; }
+.header { background: #c8102e; color: #fff; padding: 20px 24px; }
+.header h1 { font-size: 22px; font-weight: 600; }
+.header p { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+.container { max-width: 1300px; margin: 0 auto; padding: 16px; }
+.toolbar { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.toolbar label { font-size: 14px; font-weight: 500; color: #555; white-space: nowrap; }
+.toolbar input, .toolbar select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; outline: none; transition: border-color 0.2s; }
+.toolbar input:focus, .toolbar select:focus { border-color: #c8102e; box-shadow: 0 0 0 2px rgba(200,16,46,0.15); }
+.toolbar input { min-width: 180px; flex: 1; }
+.toolbar .btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+.toolbar .btn-primary { background: #c8102e; color: #fff; }
+.toolbar .btn-primary:hover { background: #a80d26; }
+.toolbar .btn-secondary { background: #e8e8e8; color: #333; }
+.toolbar .btn-secondary:hover { background: #d5d5d5; }
+.toolbar .btn-success { background: #28a745; color: #fff; }
+.toolbar .btn-success:hover { background: #218838; }
+.stat-bar { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.stat-card { background: #fff; border-radius: 8px; padding: 14px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); flex: 1; min-width: 140px; }
+.stat-card .num { font-size: 28px; font-weight: 700; color: #c8102e; }
+.stat-card .lbl { font-size: 12px; color: #888; margin-top: 2px; }
+table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+thead { background: #f8f8f8; }
+th { padding: 12px 14px; text-align: left; font-size: 13px; font-weight: 600; color: #555; border-bottom: 2px solid #eee; cursor: pointer; user-select: none; white-space: nowrap; }
+th:hover { color: #c8102e; }
+th .sort-icon { margin-left: 4px; font-size: 11px; }
+td { padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
+tr:hover { background: #fef2f3; }
+tr:last-child td { border-bottom: none; }
+.supplier-name { font-weight: 500; }
+.sku-cell { font-family: 'Courier New', monospace; font-size: 13px; color: #666; }
+.mat-cell { font-family: 'Courier New', monospace; font-size: 13px; color: #888; }
+.stock-cell { font-weight: 600; text-align: right; }
+.stock-high { color: #28a745; }
+.stock-mid { color: #e67e22; }
+.stock-low { color: #c8102e; }
+.no-result { text-align: center; padding: 60px 20px; color: #999; font-size: 15px; }
+.upload-area { display: inline-flex; align-items: center; gap: 8px; }
+#uploadBtn { position: relative; overflow: hidden; }
+#fileInput { display: none; }
+.last-update { font-size: 12px; color: #999; margin-left: auto; }
+.toast { position: fixed; top: 20px; right: 20px; background: #28a745; color: #fff; padding: 12px 24px; border-radius: 8px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.toast.error { background: #c8102e; }
+.toast.show { opacity: 1; }
+.highlight-row td { background: #fff3cd !important; }
+@media (max-width: 768px) {
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .toolbar input { min-width: auto; }
+  .stat-card .num { font-size: 22px; }
+  th, td { padding: 8px 10px; font-size: 13px; }
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📦 服务商库存查询</h1>
+  <p>供应商服务商库存表 · 按 SKU / 物料编码筛选</p>
+</div>
+<div class="container">
+  <div class="toolbar">
+    <label for="searchInput">🔍 搜索：</label>
+    <input type="text" id="searchInput" placeholder="输入 SKU 或物料编码..." autofocus>
+    <select id="supplierFilter">
+      <option value="">全部服务商</option>
+    </select>
+    <select id="seriesFilter">
+      <option value="">全部系列</option>
+    </select>
+    <button class="btn btn-secondary" onclick="clearFilter()">清空</button>
+    <div class="upload-area">
+      <button class="btn btn-success" id="uploadBtn" onclick="document.getElementById('fileInput').click()">📤 更新Excel</button>
+      <input type="file" id="fileInput" accept=".xlsx,.xls">
+    </div>
+    <span class="last-update" id="lastUpdate"></span>
+  </div>
+
+  <div class="stat-bar" id="statBar">
+    <div class="stat-card"><div class="num" id="statSuppliers">0</div><div class="lbl">服务商数</div></div>
+    <div class="stat-card"><div class="num" id="statSkus">0</div><div class="lbl">SKU 种类</div></div>
+    <div class="stat-card"><div class="num" id="statTotal">0</div><div class="lbl">总库存</div></div>
+    <div class="stat-card"><div class="num" id="statFiltered">0</div><div class="lbl">当前筛选行</div></div>
+  </div>
+
+  <div style="overflow-x: auto;">
+    <table id="dataTable">
+      <thead>
+        <tr>
+          <th onclick="sortTable('supplier')">服务商 <span class="sort-icon">↕</span></th>
+          <th onclick="sortTable('mat_code')">物料编码 <span class="sort-icon">↕</span></th>
+          <th onclick="sortTable('sku')">京东 SKU <span class="sort-icon">↕</span></th>
+          <th onclick="sortTable('material_name')">物料名称 <span class="sort-icon">↕</span></th>
+          <th onclick="sortTable('series')">系列 <span class="sort-icon">↕</span></th>
+          <th onclick="sortTable('stock')" style="text-align:right">剩余库存 <span class="sort-icon">↕</span></th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ======================== 数据 ========================
+const RAW_DATA = [
+  ["翰林汇","ZAE70000CN","100211599109","TB375FC TAB 8G+256GLG-CN","PadPro12.7",9493],
+  ["翰林汇","ZAE70003CN","100281216036","TB375FC TAB 8G+128GLG-CN","PadPro12.7",2150],
+  ["翰林汇","ZAE70004CN","100129631646","TB375FC TAB 12G+256GGE-CN","PadPro12.7",13],
+  ["翰林汇","ZAE70012CN","100281180722","TB375FC TAB 8G+256GCL-CN","PadPro12.7",5163],
+  ["佳华","ZAE70000CN","100211599109","TB375FC TAB 8G+256GLG-CN","PadPro12.7",13150],
+  ["佳华","ZAE70003CN","100281216036","TB375FC TAB 8G+128GLG-CN","PadPro12.7",13322],
+  ["佳华","ZAE70012CN","100281180722","TB375FC TAB 8G+256GCL-CN","PadPro12.7",1550],
+  ["佳华","ZAE70013CN","100211264731","TB375FC TAB 8G+128GCL-CN","PadPro12.7",14750],
+  ["佳华","ZAFT0002CN","100215097852","TB335FC TAB 6G+128GLG-CN","小新平板11",12550],
+  ["佳华","ZAG60246CN","100253757108","TB710FU TAB 8G+256GAM-CN","小新平板ProGT",7744],
+  ["佳华","ZAG60268CN","100221586831","TB710FU TAB 12G+512GSH-CN","小新平板ProGT",420],
+  ["佳华","ZAH20097CN","100244991837","TB323FU TAB 12G+256GBL-CN","拯救者Y700 5代",5959],
+  ["佳华","ZAH50004CN","100326938436","TB376FC TAB 8G+256GLG-CN","小新Pro 13",10000],
+  ["佳华","ZAHX0000CN","100265285171","TB522FU TAB 8G+256GBL-CN","拯救者Y900 13",5000],
+  ["佳华","ZAHX0001CN","100265285153","TB522FU TAB 12G+256GBL-CN","拯救者Y900 13",5838],
+  ["佳华","ZAHX0004CN","100353704342","TB522FU TAB 8G+256GWH-CN","拯救者Y900 13",5000],
+  ["佳华","ZAHX0027CN","100265285183","TB522FU TAB 8G+256GPU-CN","拯救者Y900 13",2800],
+  ["佳华","ZAHX0161CN","100353704340","TB522FU ACC 12G+256GBL-CN-KB","拯救者Y900 13",1043],
+  ["佳华","ZAJ00001CN","100265288197","TB711FU TAB 8G+128GWH-CN","拯救者Y900 11",146],
+  ["佳华","ZAJ00005CN","100353707348","TB711FU TAB 8G+128GBL-CN","拯救者Y900 11",170],
+  ["佳华","ZAJ00007CN","100353707272","TB711FU TAB 12G+256GBL-CN","拯救者Y900 11",7917],
+  ["佳华","ZAJ00008CN","100353707350","TB711FU TAB 8G+256GBL-CN","拯救者Y900 11",344],
+  ["佳华","ZAJ00009CN","100353707316","TB711FU TAB 12G+256GWH-CN","拯救者Y900 11",753],
+  ["神码","ZAE70000CN","100211599109","TB375FC TAB 8G+256GLG-CN","PadPro12.7",1000],
+  ["神码","ZAE70003CN","100281216036","TB375FC TAB 8G+128GLG-CN","PadPro12.7",12500],
+  ["神码","ZAE70006CN","100281681428","TB375FC TAB 12G+256GLG-CN","PadPro12.7",2960],
+  ["神码","ZAE70013CN","100211264731","TB375FC TAB 8G+128GCL-CN","PadPro12.7",1974],
+  ["神码","ZAFT0000CN","100215097850","TB335FC TAB 6G+128GBE-CN","小新平板11",3000],
+  ["神码","ZAFT0001CN","100167171497","TB335FC TAB 8G+128GBE-CN","小新平板11",9999],
+  ["神码","ZAG50057CN","100222318200","TB571FU TAB 16G+512GSH-CN","YogaPadPro 14.5",272],
+  ["神码","ZAG50083CN","100222318230","TB571FU ACC 16G+512GSH-CN-KB+P","YogaPadPro 14.5",408],
+  ["神码","ZAG60246CN","100253757108","TB710FU TAB 8G+256GAM-CN","小新平板ProGT",3836],
+  ["神码","ZAH20097CN","100244991837","TB323FU TAB 12G+256GBL-CN","拯救者Y700 5代",500],
+  ["神码","ZAH50000CN","100245011159","TB376FC TAB 8G+128GLG-CN","小新Pro 13",4912],
+  ["神码","ZAH50006CN","100245011169","TB376FC TAB 8G+256GCL-CN","小新Pro 13",20499],
+  ["神码","ZAHX0000CN","100265285171","TB522FU TAB 8G+256GBL-CN","拯救者Y900 13",2475],
+  ["神码","ZAHX0004CN","100353704342","TB522FU TAB 8G+256GWH-CN","拯救者Y900 13",1864],
+  ["神码","ZAJ00009CN","100353707316","TB711FU TAB 12G+256GWH-CN","拯救者Y900 11",3800],
+  ["神码","ZAJ00010CN","100353707274","TB711FU TAB 8G+256GWH-CN","拯救者Y900 11",211],
+  ["同瑄","ZAE70003CN","100281216036","TB375FC TAB 8G+128GLG-CN","PadPro12.7",24770],
+  ["同瑄","ZAFT0001CN","100167171497","TB335FC TAB 8G+128GBE-CN","小新平板11",6818],
+  ["同瑄","ZAH20046CN","100326912670","TB323FU TAB 16G+512GBL-CN","拯救者Y700 5代",783],
+  ["同瑄","ZAH20097CN","100244991837","TB323FU TAB 12G+256GBL-CN","拯救者Y700 5代",1757],
+  ["同瑄","ZAH50003CN","100326938472","TB376FC TAB 12G+256GLG-CN","小新Pro 13",2245],
+  ["同瑄","ZAH50004CN","100326938436","TB376FC TAB 8G+256GLG-CN","小新Pro 13",10707],
+  ["同瑄","ZAH50006CN","100245011169","TB376FC TAB 8G+256GCL-CN","小新Pro 13",10000],
+  ["伟仕佳杰","ZAE70000CN","100211599109","TB375FC TAB 8G+256GLG-CN","PadPro12.7",21000],
+  ["伟仕佳杰","ZAE70003CN","100281216036","TB375FC TAB 8G+128GLG-CN","PadPro12.7",7225],
+  ["伟仕佳杰","ZAFT0001CN","100167171497","TB335FC TAB 8G+128GBE-CN","小新平板11",3000],
+  ["伟仕佳杰","ZAFT0002CN","100215097852","TB335FC TAB 6G+128GLG-CN","小新平板11",20000],
+  ["伟仕佳杰","ZAG60246CN","100253757108","TB710FU TAB 8G+256GAM-CN","小新平板ProGT",2167],
+  ["伟仕佳杰","ZAH20046CN","100326912670","TB323FU TAB 16G+512GBL-CN","拯救者Y700 5代",8330],
+  ["伟仕佳杰","ZAH50004CN","100326938436","TB376FC TAB 8G+256GLG-CN","小新Pro 13",7500],
+  ["伟仕佳杰","ZAH50005CN","100326938468","TB376FC TAB 8G+256GJM-CN","小新Pro 13",10000],
+  ["伟仕佳杰","ZAJ00001CN","100265288197","TB711FU TAB 8G+128GWH-CN","拯救者Y900 11",953],
+  ["伟仕佳杰","ZAJ00005CN","100353707348","TB711FU TAB 8G+128GBL-CN","拯救者Y900 11",1201],
+  ["伟仕佳杰","ZAJ00010CN","100353707274","TB711FU TAB 8G+256GWH-CN","拯救者Y900 11",4927],
+  ["怡亚通","ZAG50083CN","100222318230","TB571FU ACC 16G+512GSH-CN-KB+P","YogaPadPro 14.5",935],
+  ["怡亚通","ZAH20046CN","100326912670","TB323FU TAB 16G+512GBL-CN","拯救者Y700 5代",2020],
+  ["怡亚通","ZAH50000CN","100245011159","TB376FC TAB 8G+128GLG-CN","小新Pro 13",15000],
+  ["怡亚通","ZAJ00008CN","100353707350","TB711FU TAB 8G+256GBL-CN","拯救者Y900 11",4108],
+  ["亿云通","ZAE70003CN","100281216036","TB375FC TAB 8G+128GLG-CN","PadPro12.7",7100],
+  ["亿云通","ZAE70012CN","100281180722","TB375FC TAB 8G+256GCL-CN","PadPro12.7",491],
+  ["亿云通","ZAG60130CN","100192962353","TB710FU TAB 8G+256GLG-CN","小新平板ProGT",1281]
+];
+
+// ======================== 核心逻辑 ========================
+let data = RAW_DATA.map(r => ({
+  supplier: r[0], mat_code: r[1], sku: r[2],
+  material_name: r[3], series: r[4], stock: Number(r[5])
+}));
+let filtered = [...data];
+let sortField = null;
+let sortDir = null;
+
+function render() {
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const sf = document.getElementById('supplierFilter').value;
+  const sr = document.getElementById('seriesFilter').value;
+
+  filtered = data.filter(d => {
+    const matchSearch = !q || d.sku.toLowerCase().includes(q) || d.mat_code.toLowerCase().includes(q) || d.material_name.toLowerCase().includes(q);
+    const matchSupplier = !sf || d.supplier === sf;
+    const matchSeries = !sr || d.series === sr;
+    return matchSearch && matchSupplier && matchSeries;
+  });
+
+  if (sortField) {
+    filtered.sort((a, b) => {
+      let va = a[sortField], vb = b[sortField];
+      if (typeof va === 'string') va = va.toLowerCase();
+      if (typeof vb === 'string') vb = vb.toLowerCase();
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
+
+  updateTable();
+  updateStats();
+}
+
+function updateTable() {
+  const tbody = document.getElementById('tableBody');
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="no-result">😕 没有匹配的数据</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(d => {
+    const stockClass = d.stock > 10000 ? 'stock-high' : d.stock > 1000 ? 'stock-mid' : 'stock-low';
+    return `<tr>
+      <td class="supplier-name">${esc(d.supplier)}</td>
+      <td class="mat-cell">${esc(d.mat_code)}</td>
+      <td class="sku-cell">${esc(d.sku)}</td>
+      <td>${esc(d.material_name)}</td>
+      <td>${esc(d.series)}</td>
+      <td class="stock-cell ${stockClass}">${d.stock.toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+}
+
+function updateStats() {
+  const suppliers = new Set(filtered.map(d => d.supplier));
+  const skus = new Set(filtered.map(d => d.sku));
+  const total = filtered.reduce((s, d) => s + d.stock, 0);
+  document.getElementById('statSuppliers').textContent = suppliers.size;
+  document.getElementById('statSkus').textContent = skus.size;
+  document.getElementById('statTotal').textContent = total.toLocaleString();
+  document.getElementById('statFiltered').textContent = filtered.length;
+}
+
+function populateSuppliers() {
+  const set = new Set(data.map(d => d.supplier));
+  const sel = document.getElementById('supplierFilter');
+  sel.innerHTML = '<option value="">全部服务商</option>'
+    + [...set].sort().map(s => `<option value="${s}">${s}</option>`).join('');
+}
+
+function populateSeries() {
+  const set = new Set(data.map(d => d.series));
+  const sel = document.getElementById('seriesFilter');
+  sel.innerHTML = '<option value="">全部系列</option>'
+    + [...set].sort().map(s => `<option value="${s}">${s}</option>`).join('');
+}
+
+function clearFilter() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('supplierFilter').value = '';
+  document.getElementById('seriesFilter').value = '';
+  render();
+}
+
+function sortTable(field) {
+  if (sortField === field) {
+    if (sortDir === 'asc') sortDir = 'desc';
+    else if (sortDir === 'desc') { sortField = null; sortDir = null; }
+    else sortDir = 'asc';
+  } else {
+    sortField = field;
+    sortDir = field === 'stock' ? 'desc' : 'asc';
+  }
+  render();
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ======================== Excel 上传 & 解析 ========================
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    try {
+      const buf = evt.target.result;
+      const workbook = XLSX.read(buf, { type: 'array' });
+
+      // 读取 Sheet1 和 Sheet2
+      const ws1 = workbook.Sheets[workbook.SheetNames[0]];
+      const ws2 = workbook.Sheets[workbook.SheetNames[1]];
+      const json1 = XLSX.utils.sheet_to_json(ws1, { header: 1, defval: '' });
+      const json2 = ws2 ? XLSX.utils.sheet_to_json(ws2, { header: 1, defval: '' }) : [];
+
+      // Build SKU lookup: 物料号 -> SKU
+      const lookup = {};
+      for (let i = 1; i < json2.length; i++) {
+        const row = json2[i];
+        if (row[0] && row[2]) lookup[String(row[0]).trim()] = String(row[2]).trim();
+        if (row[1]) lookup[String(row[1]).trim()] = String(row[2]).trim();
+      }
+
+      // Parse Sheet1
+      const newData = [];
+      for (let i = 1; i < json1.length; i++) {
+        const row = json1[i];
+        const supplier = String(row[0] || '').trim();
+        const mat_code = String(row[1] || '').trim();
+        let sku = String(row[2] || '').trim();
+        const material_name = String(row[3] || '').trim();
+        const series = String(row[4] || '').trim();
+        let stock = Number(row[5]) || 0;
+
+        // Resolve VLOOKUP
+        if (sku.startsWith('=') || !sku) sku = lookup[mat_code] || '';
+
+        if (supplier && mat_code) {
+          newData.push({ supplier, mat_code, sku, material_name, series, stock });
+        }
+      }
+
+      if (newData.length === 0) {
+        showToast('无法解析数据，请检查Excel格式（A=服务商 B=物料编码 C=SKU F=库存）', true);
+        return;
+      }
+
+      data = newData;
+      if (sortField) { sortField = null; sortDir = null; }
+      populateSuppliers();
+      populateSeries();
+      render();
+      document.getElementById('lastUpdate').textContent = '更新于: ' + new Date().toLocaleString('zh-CN');
+      showToast('✅ 数据已更新，共 ' + newData.length + ' 条记录');
+    } catch (err) {
+      showToast('❌ 解析失败: ' + err.message, true);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  this.value = '';
+});
+
+function showToast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast' + (isError ? ' error' : '');
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ======================== 初始化 ========================
+populateSuppliers();
+populateSeries();
+render();
+document.getElementById('searchInput').addEventListener('input', render);
+document.getElementById('supplierFilter').addEventListener('change', render);
+document.getElementById('seriesFilter').addEventListener('change', render);
+document.getElementById('lastUpdate').textContent = '数据日期: 2026-08-03';
+</script>
+
+<!-- SheetJS for Excel parsing -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</body>
+</html>
